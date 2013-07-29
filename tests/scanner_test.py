@@ -2,7 +2,7 @@ from __future__ import unicode_literals
 
 import unittest
 
-from mopidy.scanner import Scanner, translator
+from mopidy.scanner import Scanner
 from mopidy.models import Track, Artist, Album
 from mopidy.utils import path as path_lib
 
@@ -18,6 +18,7 @@ class FakeGstDate(object):
 
 class TranslatorTest(unittest.TestCase):
     def setUp(self):
+        self.errors = {}
         self.data = {
             'uri': 'uri',
             'album': 'albumname',
@@ -75,8 +76,22 @@ class TranslatorTest(unittest.TestCase):
 
     def check(self):
         expected = self.build_track()
-        actual = translator(self.data)
+        scanner = Scanner(self.data['uri'], self.data_callback, self.error_callback)
+        scanner.data = self.data
+        actual = scanner.translator()
         self.assertEqual(expected, actual)
+
+    def data_callback(self, data):
+        uri = data['uri'][len('file://'):]
+        self.data[uri] = data
+
+    def data_callback(self, data):
+        uri = data['uri'][len('file://'):]
+        self.data[uri] = data
+
+    def error_callback(self, uri, error, debug):
+        uri = uri[len('file://'):]
+        self.errors[uri] = (error, debug)
 
     def test_basic_data(self):
         self.check()
@@ -209,6 +224,10 @@ class ScannerTest(unittest.TestCase):
     def test_other_media_is_ignored(self):
         self.scan('scanner/image')
         self.assert_(self.errors)
+
+    #def test_log_file_is_ignored(self):
+    #    self.scan('scanner/example.log')
+    #    self.assert_(self.errors)
 
     @unittest.SkipTest
     def test_song_without_time_is_handeled(self):

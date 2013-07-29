@@ -89,9 +89,8 @@ def main():
     logging.info('Found %d new or modified tracks.', len(uris_update))
 
     def store(data):
-        track = translator(data)
-        local_updater.add(track)
-        logging.debug('Added %s', track.uri)
+        local_updater.add(data['track'])
+        logging.debug('Added %s', data['track'].uri)
 
     def debug(uri, error, debug):
         logging.warning('Failed %s: %s', uri, error)
@@ -126,53 +125,7 @@ def parse_args():
     return parser.parse_args(args=mopidy_args)
 
 
-# TODO: move into scanner.
-def translator(data):
-    albumartist_kwargs = {}
-    album_kwargs = {}
-    artist_kwargs = {}
-    track_kwargs = {}
 
-    def _retrieve(source_key, target_key, target):
-        if source_key in data:
-            target[target_key] = data[source_key]
-
-    _retrieve(gst.TAG_ALBUM, 'name', album_kwargs)
-    _retrieve(gst.TAG_TRACK_COUNT, 'num_tracks', album_kwargs)
-    _retrieve(gst.TAG_ALBUM_VOLUME_COUNT, 'num_discs', album_kwargs)
-    _retrieve(gst.TAG_ARTIST, 'name', artist_kwargs)
-
-    if gst.TAG_DATE in data and data[gst.TAG_DATE]:
-        date = data[gst.TAG_DATE]
-        try:
-            date = datetime.date(date.year, date.month, date.day)
-        except ValueError:
-            pass  # Ignore invalid dates
-        else:
-            track_kwargs['date'] = date.isoformat()
-
-    _retrieve(gst.TAG_TITLE, 'name', track_kwargs)
-    _retrieve(gst.TAG_TRACK_NUMBER, 'track_no', track_kwargs)
-    _retrieve(gst.TAG_ALBUM_VOLUME_NUMBER, 'disc_no', track_kwargs)
-
-    # Following keys don't seem to have TAG_* constant.
-    _retrieve('album-artist', 'name', albumartist_kwargs)
-    _retrieve('musicbrainz-trackid', 'musicbrainz_id', track_kwargs)
-    _retrieve('musicbrainz-artistid', 'musicbrainz_id', artist_kwargs)
-    _retrieve('musicbrainz-albumid', 'musicbrainz_id', album_kwargs)
-    _retrieve(
-        'musicbrainz-albumartistid', 'musicbrainz_id', albumartist_kwargs)
-
-    if albumartist_kwargs:
-        album_kwargs['artists'] = [Artist(**albumartist_kwargs)]
-
-    track_kwargs['uri'] = data['uri']
-    track_kwargs['last_modified'] = int(data['mtime'])
-    track_kwargs['length'] = data[gst.TAG_DURATION]
-    track_kwargs['album'] = Album(**album_kwargs)
-    track_kwargs['artists'] = [Artist(**artist_kwargs)]
-
-    return Track(**track_kwargs)
 
 
 class Scanner(object):
@@ -226,7 +179,8 @@ class Scanner(object):
         self.data['uri'] = uri
         self.data['mtime'] = os.path.getmtime(path.uri_to_path(uri))
         self.data[gst.TAG_DURATION] = self.get_duration()
-
+        self.translator()
+        
         try:
             self.data_callback(self.data)
             self.next_uri()
@@ -279,6 +233,54 @@ class Scanner(object):
     def stop(self):
         self.pipe.set_state(gst.STATE_NULL)
         self.loop.quit()
+
+    def translator(self):
+        albumartist_kwargs = {}
+        album_kwargs = {}
+        artist_kwargs = {}
+        track_kwargs = {}
+
+        def _retrieve(source_key, target_key, target):
+            if source_key in self.data:
+                target[target_key] = self.data[source_key]
+
+        _retrieve(gst.TAG_ALBUM, 'name', album_kwargs)
+        _retrieve(gst.TAG_TRACK_COUNT, 'num_tracks', album_kwargs)
+        _retrieve(gst.TAG_ALBUM_VOLUME_COUNT, 'num_discs', album_kwargs)
+        _retrieve(gst.TAG_ARTIST, 'name', artist_kwargs)
+
+        if gst.TAG_DATE in self.data and self.data[gst.TAG_DATE]:
+            date = self.data[gst.TAG_DATE]
+            try:
+                date = datetime.date(date.year, date.month, date.day)
+            except ValueError:
+                pass  # Ignore invalid dates
+            else:
+                track_kwargs['date'] = date.isoformat()
+
+        _retrieve(gst.TAG_TITLE, 'name', track_kwargs)
+        _retrieve(gst.TAG_TRACK_NUMBER, 'track_no', track_kwargs)
+        _retrieve(gst.TAG_ALBUM_VOLUME_NUMBER, 'disc_no', track_kwargs)
+
+        # Following keys don't seem to have TAG_* constant.
+        _retrieve('album-artist', 'name', albumartist_kwargs)
+        _retrieve('musicbrainz-trackid', 'musicbrainz_id', track_kwargs)
+        _retrieve('musicbrainz-artistid', 'musicbrainz_id', artist_kwargs)
+        _retrieve('musicbrainz-albumid', 'musicbrainz_id', album_kwargs)
+        _retrieve(
+            'musicbrainz-albumartistid', 'musicbrainz_id', albumartist_kwargs)
+
+        if albumartist_kwargs:
+            album_kwargs['artists'] = [Artist(**albumartist_kwargs)]
+
+        track_kwargs['uri'] = self.data['uri']
+        track_kwargs['last_modified'] = int(self.data['mtime'])
+        track_kwargs['length'] = self.data[gst.TAG_DURATION]
+        track_kwargs['album'] = Album(**album_kwargs)
+        track_kwargs['artists'] = [Artist(**artist_kwargs)]
+
+        self.data['track'] = Track(**track_kwargs)
+        return self.data['track']
 
 
 if __name__ == '__main__':
