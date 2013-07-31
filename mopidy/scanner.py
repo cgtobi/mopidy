@@ -262,7 +262,7 @@ class Scanner(object):
     def process_timeout(self):
         if self.error_callback:
             uri = self.uribin.get_property('uri')
-            self.error_callback(uri, 'timeout', 'debug')
+            self.error_callback(uri, 'Processing timeout after %i seconds' % self.timeout, 'debug')
         self.next_uri()
         return True
 
