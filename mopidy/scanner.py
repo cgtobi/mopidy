@@ -182,6 +182,7 @@ class Scanner(object):
         self.data_callback = data_callback
         self.error_callback = error_callback
         self.loop = gobject.MainLoop()
+        self.timeout_id = None
 
         self.fakesink = gst.element_factory_make('fakesink')
         self.fakesink.set_property('signal-handoffs', True)
@@ -201,6 +202,7 @@ class Scanner(object):
         bus.connect('message::application', self.process_application)
         bus.connect('message::tag', self.process_tags)
         bus.connect('message::error', self.process_error)
+        bus.connect('message::timeout', self.process_timeout)
 
     def process_handoff(self, fakesink, buffer_, pad):
         # When this function is called the first buffer has reached the end of
@@ -252,6 +254,13 @@ class Scanner(object):
             self.error_callback(uri, error, debug)
         self.next_uri()
 
+    def process_timeout(self):
+        if self.error_callback:
+            uri = self.uribin.get_property('uri')
+            self.error_callback(uri, 'timeout', 'debug')
+        self.next_uri()
+        return True
+
     def get_duration(self):
         self.pipe.get_state()  # Block until state change is done.
         try:
@@ -262,6 +271,9 @@ class Scanner(object):
 
     def next_uri(self):
         self.data = {}
+        if self.timeout_id:
+            gobject.source_remove(self.timeout_id)
+            self.timeout_id = None
         try:
             uri = next(self.uris)
         except StopIteration:
@@ -269,6 +281,7 @@ class Scanner(object):
             return False
         self.pipe.set_state(gst.STATE_NULL)
         self.uribin.set_property('uri', uri)
+        self.timeout_id = gobject.timeout_add(1000, self.process_timeout)#, message)
         self.pipe.set_state(gst.STATE_PLAYING)
         return True
 
