@@ -97,9 +97,14 @@ def main():
         logging.warning('Failed %s: %s', uri, error)
         logging.debug('Debug info for %s: %s', uri, debug)
 
+    if not config['local']['scan_timeout']:
+        scan_timeout = 1000
+    else:
+        scan_timeout = config['local']['scan_timeout']
+
     logging.info('Scanning new and modified tracks.')
     # TODO: just pass the library in instead?
-    scanner = Scanner(uris_update, store, debug)
+    scanner = Scanner(uris_update, store, debug, scan_timeout)
     try:
         scanner.start()
     except KeyboardInterrupt:
@@ -176,11 +181,12 @@ def translator(data):
 
 
 class Scanner(object):
-    def __init__(self, uris, data_callback, error_callback=None):
+    def __init__(self, uris, data_callback, error_callback=None, scan_timeout=1000):
         self.data = {}
         self.uris = iter(uris)
         self.data_callback = data_callback
         self.error_callback = error_callback
+        self.scan_timeout = scan_timeout
         self.loop = gobject.MainLoop()
         self.timeout_id = None
 
@@ -202,7 +208,6 @@ class Scanner(object):
         bus.connect('message::application', self.process_application)
         bus.connect('message::tag', self.process_tags)
         bus.connect('message::error', self.process_error)
-        bus.connect('message::timeout', self.process_timeout)
 
     def process_handoff(self, fakesink, buffer_, pad):
         # When this function is called the first buffer has reached the end of
@@ -281,7 +286,7 @@ class Scanner(object):
             return False
         self.pipe.set_state(gst.STATE_NULL)
         self.uribin.set_property('uri', uri)
-        self.timeout_id = gobject.timeout_add(1000, self.process_timeout)#, message)
+        self.timeout_id = gobject.timeout_add(self.scan_timeout, self.process_timeout)
         self.pipe.set_state(gst.STATE_PLAYING)
         return True
 
